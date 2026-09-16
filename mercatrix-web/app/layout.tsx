@@ -41,11 +41,13 @@ export default function RootLayout({
         >
           <QueryProvider>
             <AuthProvider>
-              <Navbar />
-              <main>
-                {children}
-              </main>
-              <Toaster position="top-center" richColors />
+              <>
+                <Navbar />
+                <main>
+                  {children}
+                </main>
+                <Toaster position="top-center" richColors />
+              </>
             </AuthProvider>
           </QueryProvider>
         </ThemeProvider>

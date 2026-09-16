@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -36,7 +36,7 @@ const vendorSchema = customerSchema.extend({
 type CustomerFormValues = z.infer<typeof customerSchema>;
 type VendorFormValues = z.infer<typeof vendorSchema>;
 
-export default function SignupPage() {
+function SignupForm() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') === 'vendor' ? 'vendor' : 'customer';
   const [activeTab, setActiveTab] = useState<'customer' | 'vendor'>(initialTab);
@@ -221,5 +221,17 @@ export default function SignupPage() {
         </Card>
       </motion.div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-muted/30">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <SignupForm />
+    </Suspense>
   );
 }
