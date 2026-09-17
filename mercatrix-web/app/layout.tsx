@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   description: "A futuristic, elegant marketplace for independent vendors.",
 };
 
+export const dynamic = 'force-dynamic';
+
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 
 export default function RootLayout({
