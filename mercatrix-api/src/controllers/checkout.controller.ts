@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { prisma } from '../config/db';
+import { redis } from '../config/redis';
 import { createOrderSchema, checkoutSummarySchema, verifyPaymentSchema } from '../schemas/checkout.schema';
 import { addressSchema } from '../schemas/address.schema';
 
@@ -41,19 +42,32 @@ export const getCheckoutSummary = async (req: Request, res: Response, next: Next
       return;
     }
 
-    const variantIds = itemsToProcess.map((i: any) => i.variantId);
-    const variants: any[] = await prisma.productVariant.findMany({
-      where: { id: { in: variantIds } },
-      include: {
-        product: {
-          include: {
-            images: true,
-            vendor: true,
-            category: true,
+    const variantIds = itemsToProcess.map((i: any) => i.variantId).sort();
+    const cacheKey = `checkout:summary:variants:${variantIds.join(',')}`;
+
+    let variants: any[] = [];
+    const cachedVariants = await redis.get(cacheKey);
+
+    if (cachedVariants) {
+      variants = JSON.parse(cachedVariants);
+    } else {
+      variants = await prisma.productVariant.findMany({
+        where: { id: { in: variantIds } },
+        include: {
+          product: {
+            include: {
+              images: true,
+              vendor: true,
+              category: true,
+            }
           }
         }
+      });
+      if (variants.length > 0) {
+        // Cache for 15 seconds to handle high-traffic concurrency without serving overly stale stock data
+        await redis.setex(cacheKey, 15, JSON.stringify(variants));
       }
-    });
+    }
 
     const variantMap = new Map<string, any>(variants.map((v: any) => [v.id, v]));
 
@@ -427,16 +441,17 @@ export const verifyPayment = async (req: Request, res: Response, next: NextFunct
         return order;
       }
 
-      // Safe stock verification and decrement
+      // Safe stock verification and decrement using Row-Level Locking
       for (const subOrder of order.subOrders) {
         let hasOutOfStock = false;
         for (const item of subOrder.orderItems) {
-          const variant = await tx.productVariant.findUnique({
-            where: { id: item.variant_id },
-            select: { id: true, stock_quantity: true }
-          });
+          // Explicitly lock the row so concurrent checkouts cannot read the same stock value simultaneously
+          const variantLock = await tx.$queryRaw<Array<{ stock_quantity: number }>>`
+            SELECT stock_quantity FROM "ProductVariant" 
+            WHERE id = ${item.variant_id} FOR UPDATE
+          `;
 
-          if (!variant || variant.stock_quantity < item.quantity) {
+          if (variantLock.length === 0 || variantLock[0].stock_quantity < item.quantity) {
             hasOutOfStock = true;
             await tx.subOrder.update({
               where: { id: subOrder.id },
